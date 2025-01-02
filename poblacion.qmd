@@ -1,0 +1,218 @@
+---
+title: "Pirámides poblacionales en R: los desafios futuros"
+author: "Roberto Valdez Rivera"
+date: "2024-12-10"
+format:
+  html:
+    toc: true #Tabla de contenido
+    code-fold: show
+    #code-background: "dark" #Color del fondo del código
+    number-section: true
+categories: [Población, Grupos poblacionales, R]
+image: "plot-p-2020.png"
+#server: shiny ## Configurarlo después
+---
+
+Las proyecciones sobre los datos de la población son fundamentales para conocer cómo estarán conformados los grupos poblacionales en los próximos años. El análisis de la estructura de la sociedad a través del tiempo, de acuerdo con la realización de la agrupación por grupos de edades, permiten responder a preguntas que no solo corresponden a la formulación de políticas pública como, por ejemplo, la asignación del presupuesto a las pensiones contributivas y no contributivas. Es de interés, también, para conocer cómo estará conformada la población económica activa en las próximas décadas, entre otros factores.
+
+En México el encargado de realizar estos cálculos, siguiendo una metodología propia, es el Consejo Nacional de Población (CONAPO).
+
+### Propósito
+
+El propósito del presente estudio es explorar los datos que nos encontramos en esta base de datos para, por medio de un filtrado inciando con el 2020 hasta el 2070, realizar el manejo correspondiente para poder visualizar la estructura de los grupos por medio de pirámides poblacionales.
+
+## Datos
+
+Los datos se encontrarán fácilmente en formato *csv* mediante la página de [Datos Abiertos](https://datos.gob.mx/busca/dataset?res_format=CSV) del gobierno de México.
+
+Primero, es necesario cargar las librerías necesarias. Para realizar la exploración, el manejo y filtrado correspondiente se utilizará la librería *dplyr*. El manejo de variables tipo fecha, aunque requiere una transformación sencilla, será con ayuda de la librería *lubridate*. Depués, será necesario visualizar el comportamiento de la población a través del tiempo con un gráfico interactivo por medio de *highcharter*. Por último, se realizarán las pirámides poblacionales con la ayuda de *ggplot2* y a través de *plotly* se transoformarán los gráficos estáticos a dinámicos.
+
+```{r include=FALSE}
+knitr::opts_chunk$set(message = F,
+                      warning = F,
+                      error = F)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(highcharter)
+library(lubridate)
+library(plotly)
+```
+
+Para importar la base de datos con ayuda de la función _read.csv()_, con nombre "Pob_1950_2070" en formato _csv (comma separated values)_, será de la siguiente forma en la que inmediatamente se trasnformarán los nombres de las columnas a minúsculas. 
+
+```{r}
+pob <- read.csv("Pob_1950_2070.csv", encoding = "latin1") %>%
+  rename_all(tolower)
+```
+
+Para poder observar de forma general la estructura de los datos será necesario imprimir las primeras y últimas 5 filas:
+
+```{r}
+head(pob,5)
+tail(pob,5)
+```
+
+Con base en lo anterior, conocemos que la estructura de la base de datos incia con los registros de la población desde 1950 hasta las proyecciones de 2071 y el listado de los datos inicia por los registros de la República Mexicana con clave goegráfica 0 hasta Zacatecas con clave 32, con iteraciones de acuerdo a cada año.
+
+Esta base de datos es extensa: su estrucura es de 744,920 x 7, es decir, cerca de 745 mil filas y 7 columnas o variables.
+
+## Exploración
+
+Antes de realizar un manejo a los datos de la población es necesario conocer algunas estadísticas descriptivas como el promedio, la mediana, el máximo y mínimo, así como el tipo de variable --identificando, también, que la lectura de la base de datos se ha realizado de forma correcta-- en la que *R* pueda distinguir entre las variables numéricas y de texto.
+
+Para esto, pueden servirnos dos funciones: *str()* y *summary()*. La primera imprime un resumen que indica el tipo de variable entre "int" para variables numéricas --aunque pueden ser de otros tipos-- y "chr" para indicar variables string que incluyen texto en su contenido. Se utilizará la segunda función porque, a parte de que nos indica el tipo de variable, nos imprimirá un breve resumen de estadísticos descriptivos para cada una de estas:
+
+```{r}
+summary(pob)
+```
+
+Por su parte, en muchos casos es imperante identificar si dentro de la base de datos se encuentran registros faltantes (NA) porque cuando se desea realizar algunas tranformaciones y análisis pueden interferir en el procedimiento. Una manera sencilla de ubicarlos es mediante la función *is.na()*, pero como al imprimirla nos arrojará una matriz booleana (valores falsos y verdaderos) de n x m, será mejor incorporar la función *table()* para que realice solo el conteo de los mismos.
+
+```{r}
+table(is.na(pob))
+```
+
+Se identifica entonces que no se encuentran valores faltanes, lo que nos resulta extraordinario.
+
+Antes de pasar de lleno con el manejo de los datos, resulta interesante realizar un gráfico de serie temporal que nos permita conocer el comportamiento que ha presentado el crecimiento de la población desde 1950 hasta las proyecciones que realizó la CONAPO para el 2070. Primero, tenemos que transformar la variable "año" en formato fecha. Segundo, sintetizando los pasos por medio de los _pipes_ o _tuberías_ ---sobre  todo, para concatenar funciones y reducir las líneas de código--- se filtrará para después agrupar por "año" y "sexo" para poder obtener la suma de la población para cada año y correspondiente a cada sexo.
+
+Para poder realizar el gráfico con características interactivas, y con una barra inferior para cambiar el rango de las fechas a visualizar, es necesario crear un _hchart_ de la librería _highcharter_ indicando las caraterísticas de presentación deseadas.
+
+```{r}
+pob_s <- pob
+pob_s$año <-ymd(paste0(pob_s$año, "-01-01"))
+
+pob_s%>%filter(entidad=="República Mexicana") %>%
+  group_by(año, sexo) %>% 
+  summarise(poblacion=sum(poblacion)) %>%
+  hchart(type = "line", hcaes(x=año, y=poblacion,group=sexo)) %>%
+  hc_title(text="Población por Sexo a través del tiempo") %>%
+  hc_xAxis(title = list(text = "Año")) %>%
+  hc_yAxis(title=list(text="Población")) %>%
+  hc_navigator(enabled=T)%>%
+  hc_colors(c("#AEEEEE","#FFB5C1"))%>%
+  hc_credits(text="Elaboración propia con base en datos de la CONAPO.",
+             enabled=T,
+             style=list(fontSize="12px"), color="black")
+```
+
+Ahora bien, lo que nos puede interesar, con base en el gráfico anterior, es conocer el año en que se alcance el punto máximo de la población de acuerdo al sexo. Es necesario agrupar los datos de acuerdo al sexo y año por medio de la función *group_by()*, creado así un nuevo objeto. Después, por medio de dos filtros, se puede hallar cuál será el año en que se alcanzará el número máximo de población de acuerdo al sexo.
+
+```{r}
+p_a<-pob%>%filter(entidad=="República Mexicana") %>%
+  group_by(año,sexo) %>% summarise(poblacion=sum(poblacion))
+
+m <- p_a[p_a$sexo=="Mujeres", ]
+m <- m[m$poblacion==max(m$poblacion), ]
+h <- p_a[p_a$sexo=="Hombres", ]
+h <- h[h$poblacion==max(h$poblacion), ]
+rbind(m,h)
+```
+
+De acuerdo con los datos de la CONAPO, y realizando la exploración, encontramos que el número máximo de mujeres se alcanzará en 2052 cuando ascienda a 75 millones 335 mil 14 personas, mientras que en el caso de los hombres se encontrará un año después, en el 2053, cuando alcance los 71 millones 697 mil 430 personas. Con base en la gráfica, podemos observar que es a partir de la década de 1990 cuando comenzó la tendencia de que las mujeres representaran un número mayor en comparación con los hombres que, a partir de las proyecciones que encontramos en los datos, la tendencia es que se mantenga e incluso se profundice. Por su parte, lo preocupante es que a partir de mediados de la década de 2050 la población comenzará a disminuir.
+
+## Manipulación
+
+Podemos observar que algunas columnas no nos sirven como la de "renglón" y "cve_geo". Lo mejor será quitarlas para que no nos estorben. De esta forma estaremos iniciando en el manejo y transformación de la base de datos.
+
+```{r}
+pob <- pob[,-c(1,4)]
+
+head(pob,3)
+```
+
+**Nota: Para términos prácticos es necesario que se considere que el código observable siguiente solo se ha realizado para el año 2020. Sin embargo, las líneas de código son replicables para el 2030 hasta 2070.**
+
+Asimismo, es necesario crear un nuevo objeto que guarde los datos específicos para el 2020, en otras palabras, crear un objeto que guarde un subconjunto específico de datos. El método de filtrado puede realizarse mediante la función *filter()*, pero para este caso se hará indicando las filas que cumplan la condición de que el año sea igual a 2020 y la entidad sea igual a la República Mexicana.
+
+```{r}
+veintes <- pob[pob$año==2020 & pob$entidad=="República Mexicana", ]
+```
+
+Posteriormente, por medio de la función _mutate()_ en conjunto con _case_when()_ será necesario crear una nueva variable que identifique los rangos de edades sobre los cuales queremos agrupar a la población. En las siguientes líneas de código se encontrará la agrupación de los grupos de edades que, expresado en términos sencillos, se realizó arbitrariamente ---solo correspondiendo a que fuesen varios grupos---.
+
+```{r}
+veintes <- mutate(veintes, grupo_edad= case_when(
+  edad>=0 & edad<=8 ~1,
+  edad>=9 & edad<=16 ~2,
+  edad>=17 & edad<=24 ~3,
+  edad>=25 & edad<=32 ~4,
+  edad>=33 & edad<=40 ~5,
+  edad>=41 & edad<=48 ~6,
+  edad>=49 & edad<=56 ~7,
+  edad>=57 & edad<=64 ~8,
+  edad>=65 & edad<=72 ~9,
+  edad>=73 & edad<=80 ~10,
+  edad>=81 & edad<=88 ~11,
+  edad>=89 & edad<=96 ~12,
+  edad>=97 ~13
+))
+```
+
+Depués de la creación de la nueva variable, es necesario transformarla a tipo factor a través de la función _factor()_ para que, cuando llegue el momento de la visualización, los grupos de edades estén perfectamente acomodados. Es aquí, también, que se añaden las etiquetas representativas de los grupos de edades, iniciando en "0 a 8 años" hasta "97 años y más".
+
+```{r}
+veintes$grupo_edad <- 
+  factor(veintes$grupo_edad, 
+         levels = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+         labels=c("0 a 8 años","9 a 16","17 a 24","25 a 32","33 a 40",
+                  "41 a 48","49 a 56","57 a 64","65 a 72","73 a 80",
+                  "81 a 88","89 a 96","97 años y más"))
+```
+
+Para que el número de personas expresado en millones no nos complique la representación visual, lo recomendable es dividir la población entre un millón. Posteriormente, las cifras dentro de los gráficos tendremos que leerlos como "población en millones de personas". Por último, por medio de la función _group_by()_ agruparemos los datos de acuerdo a los grupos de edades y sexo, seguido de obtener una suma para cada uno de los trece grupos de edad.
+
+```{r}
+veintes <- mutate(veintes,pob=poblacion/1000000)
+
+veintes<- veintes%>% group_by(grupo_edad,sexo)%>%
+  summarise(pob=sum(pob))
+```
+
+De esta forma ¡Estamos listos para poder visualizar los datos de las pirámides poblacionales con ayuda de _ggplot2_ y _plotly_!
+
+## Visualización interactiva
+
+Para poder realizar una visualización en forma de pirámide poblacional con _ggplot2_ será necesario definir dentro de _geom_col()_ un subconjunto de datos del objeto de acuerdo al sexo. Se indica que de lado izquierdo se coloquen los grupos de edades de los hombres y de lado derecho a las mujeres, así como establecer colores representativos de las columnas. Por último, por medio de _ggplotly()_ (de la librería _plotly_), se indica que el objeto que contiene el gráfico estático se transforme a interactivo con características interesantes.
+
+```{r}
+g1 <- ggplot(data = veintes, 
+             mapping = aes(x = grupo_edad, y = pob,
+                           text = paste("Grupo de Edad:", grupo_edad, "<br>Sexo:", sexo,
+                                        "<br>Población:", abs(pob)))) +
+  geom_col(data = subset(veintes, sexo == "Hombres") %>% 
+             mutate(pob = -1 * pob), 
+           fill = "lightblue", width = 0.95) +
+  geom_col(data = subset(veintes, sexo == "Mujeres"), 
+           fill = "lightpink", width = 0.95) +
+  coord_flip() + 
+  theme_bw() +
+  scale_y_continuous(
+    breaks = c(seq(-12, -2, 2), seq(2, 12, 2)),
+    labels = c(seq(-12, -2, 2) * -1, seq(2, 12, 2))
+  ) +
+  theme(legend.position = "bottom") +
+  labs(title = "Pirámide poblacional del 2020",
+       y = "Millones de personas", x = "Grupo de edades",
+       caption ="Fuente: Elaboración propia con base en datos de la CONAPO.")
+
+ggplotly(g1, tooltip="text")
+```
+
+### Visualización a través del tiempo
+
+Por medio de la siguiente interfaz interactiva puede seleccionar el año que desee observar. La selección del año inicia desde 2020 hasta el 2070, permitiéndole analizar detenidamente los cambios que, de acuerdo con la CONAPO, tendrán los grupos poblacionales en México en las próximas décadas.
+
+<iframe 
+  src="https://8ae5a2e98ff54d6bbba709567af190f6.app.posit.cloud/" 
+  width="100%" 
+  height="500px" 
+  frameborder="0"> 
+</iframe> 
+
+Por último, con base en el análisis realizado, la estructura de la población en los próximos años representará serios desafios para la planeación e implementación de políticas públicas; la estructura de la sociedad estará ampliamente concentrada en los grupos de mayor edad, siendo el de tercera edad una cifra ---juzgándolo por lo que presenta en nuestros días--- alarmante.
+
+
